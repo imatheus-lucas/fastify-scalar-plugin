@@ -5,6 +5,7 @@ import type {
   RouteOptions,
 } from "fastify";
 import fp from "fastify-plugin";
+import { z } from "zod/v4";
 
 interface ScalarDocsOptions {
   routePrefix?: string;
@@ -22,7 +23,6 @@ interface ScalarDocsOptions {
   scalarOptions?: Record<string, any>;
 }
 
-// Interface para armazenar informações das rotas
 interface RouteInfo {
   method: string;
   url: string;
@@ -45,25 +45,20 @@ export const fastifyScalarDocs: FastifyPluginAsync<ScalarDocsOptions> = async (
     scalarOptions = {},
   } = options;
 
-  // Array para armazenar as rotas conforme são registradas
   const registeredRoutes: RouteInfo[] = [];
 
-  // Hook para capturar rotas conforme são registradas
   fastify.addHook("onRoute", (routeOptions: RouteOptions) => {
     const methods = Array.isArray(routeOptions.method)
       ? routeOptions.method
       : [routeOptions.method];
 
-    // Filtra apenas métodos HTTP principais, ignorando HEAD automático
     const validMethods = methods.filter((method) =>
       ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"].includes(
         method.toUpperCase()
       )
     );
 
-    // Adiciona cada método válido como uma rota separada
     validMethods.forEach((method) => {
-      // Evita duplicação - só adiciona se não existir ainda
       const routeExists = registeredRoutes.some(
         (route) => route.method === method && route.url === routeOptions.url
       );
@@ -84,7 +79,6 @@ export const fastifyScalarDocs: FastifyPluginAsync<ScalarDocsOptions> = async (
     });
   });
 
-  // Rota de debug para testar se o plugin está funcionando
   fastify.get(`${routePrefix}/debug`, async (request, reply) => {
     const routes = registeredRoutes.map((route) => ({
       method: route.method,
@@ -106,7 +100,6 @@ export const fastifyScalarDocs: FastifyPluginAsync<ScalarDocsOptions> = async (
     };
   });
 
-  // Registra a rota para servir o OpenAPI JSON com debug completo
   fastify.get(`${routePrefix}/openapi.json`, async (request, reply) => {
     try {
       fastify.log.info("🔍 Iniciando geração do OpenAPI spec...");
@@ -123,11 +116,21 @@ export const fastifyScalarDocs: FastifyPluginAsync<ScalarDocsOptions> = async (
       let processedRoutes = 0;
       let skippedRoutes = 0;
 
-      // Extrai as rotas e schemas do array de rotas registradas
       for (const route of registeredRoutes) {
         fastify.log.debug(`🔎 Analisando rota: ${route.method} ${route.url}`);
 
-        // Pula rotas internas do plugin
+        fastify.log.info({
+          message: "[DEBUG] Inspecionando rota capturada pelo onRoute",
+          routeDetails: {
+            url: route.url,
+            method: route.method,
+            hasSchema: !!route.schema,
+
+            schemaKeys: route.schema
+              ? Object.keys(route.schema)
+              : "Nenhum schema encontrado",
+          },
+        });
         if (
           route.url.startsWith(routePrefix) ||
           route.url.startsWith("/_") ||
@@ -179,29 +182,23 @@ export const fastifyScalarDocs: FastifyPluginAsync<ScalarDocsOptions> = async (
             responses: {},
           };
 
-          // Processa parâmetros de query
           if (routeSchema.querystring) {
             try {
-              // Verifica se é um schema Zod válido
-              if (routeSchema.querystring.properties) {
-                Object.keys(routeSchema.querystring.properties).forEach(
-                  (param) => {
-                    operationSpec.parameters.push({
-                      name: param,
-                      in: "query",
-                      schema: routeSchema.querystring.properties[param],
-                      required:
-                        routeSchema.querystring.required?.includes(param) ||
-                        false,
-                    });
-                  }
-                );
-              } else {
-                // Tenta usar o schema diretamente
-                operationSpec.parameters.push({
-                  name: "query",
-                  in: "query",
-                  schema: routeSchema.querystring,
+              const querySchema = convertSchemaToOpenAPI(
+                routeSchema.querystring,
+                fastify.log
+              );
+
+              if (querySchema.properties) {
+                Object.keys(querySchema.properties).forEach((param) => {
+                  const paramSchema = querySchema.properties[param];
+                  operationSpec.parameters.push({
+                    name: param,
+                    in: "query",
+                    schema: paramSchema,
+                    required: querySchema.required?.includes(param) || false,
+                    description: paramSchema.description || undefined,
+                  });
                 });
               }
               fastify.log.debug(
@@ -209,63 +206,78 @@ export const fastifyScalarDocs: FastifyPluginAsync<ScalarDocsOptions> = async (
               );
             } catch (error) {
               fastify.log.warn(
-                `⚠️ Erro ao processar querystring para ${route.url}: ${error}`
+                error,
+                `⚠️ Erro ao processar querystring para ${route.url}:`
               );
             }
           }
 
-          // Processa parâmetros de path
           if (routeSchema.params) {
             try {
-              if (routeSchema.params.properties) {
-                Object.keys(routeSchema.params.properties).forEach((param) => {
+              const paramsSchema = convertSchemaToOpenAPI(
+                routeSchema.params,
+                fastify.log
+              );
+
+              if (paramsSchema.properties) {
+                Object.keys(paramsSchema.properties).forEach((param) => {
+                  const paramSchema = paramsSchema.properties[param];
                   operationSpec.parameters.push({
                     name: param,
                     in: "path",
-                    schema: routeSchema.params.properties[param],
+                    schema: paramSchema,
                     required: true,
+                    description: paramSchema.description || undefined,
                   });
                 });
               }
               fastify.log.debug(`✅ Path params processados para ${route.url}`);
             } catch (error) {
               fastify.log.warn(
-                `⚠️ Erro ao processar params para ${route.url}: ${error}`
+                error,
+                `⚠️ Erro ao processar params para ${route.url}:`
               );
             }
           }
 
-          // Processa body para métodos POST, PUT, PATCH
           if (["post", "put", "patch"].includes(method) && routeSchema.body) {
             try {
+              const bodySchema = convertSchemaToOpenAPI(
+                routeSchema.body,
+                fastify.log
+              );
               operationSpec.requestBody = {
                 required: true,
                 content: {
                   "application/json": {
-                    schema: routeSchema.body,
+                    schema: bodySchema,
                   },
                 },
               };
               fastify.log.debug(`✅ Body processado para ${route.url}`);
             } catch (error) {
               fastify.log.warn(
-                `⚠️ Erro ao processar body para ${route.url}: ${error}`
+                error,
+                `⚠️ Erro ao processar body para ${route.url}:`
               );
             }
           }
 
-          // Processa responses
           try {
             if (
               routeSchema.response &&
               typeof routeSchema.response === "object"
             ) {
               Object.keys(routeSchema.response).forEach((statusCode) => {
+                const responseSchema = convertSchemaToOpenAPI(
+                  routeSchema.response[statusCode],
+                  fastify.log
+                );
                 operationSpec.responses[statusCode] = {
                   description: getResponseDescription(statusCode),
                   content: {
                     "application/json": {
-                      schema: routeSchema.response[statusCode],
+                      schema: responseSchema,
                     },
                   },
                 };
@@ -284,9 +296,10 @@ export const fastifyScalarDocs: FastifyPluginAsync<ScalarDocsOptions> = async (
             fastify.log.debug(`✅ Responses processadas para ${route.url}`);
           } catch (error) {
             fastify.log.warn(
-              `⚠️ Erro ao processar responses para ${route.url}: ${error}`
+              error,
+              `⚠️ Erro ao processar responses para ${route.url}:`
             );
-            // Response de fallback
+
             operationSpec.responses["200"] = {
               description: "Success",
               content: {
@@ -302,7 +315,8 @@ export const fastifyScalarDocs: FastifyPluginAsync<ScalarDocsOptions> = async (
           fastify.log.info(`✅ Rota processada: ${route.method} ${route.url}`);
         } catch (routeError) {
           fastify.log.error(
-            `❌ Erro ao processar rota ${route.method} ${route.url}: ${routeError}`
+            routeError,
+            `❌ Erro ao processar rota ${route.method} ${route.url}:`
           );
           skippedRoutes++;
         }
@@ -329,7 +343,7 @@ export const fastifyScalarDocs: FastifyPluginAsync<ScalarDocsOptions> = async (
 
       return openApiSpec;
     } catch (error) {
-      fastify.log.error(`❌ Erro crítico ao gerar OpenAPI spec: ${error} `);
+      fastify.log.error(error, "❌ Erro crítico ao gerar OpenAPI spec:");
       reply.code(500);
       return {
         error: "Erro interno ao gerar especificação OpenAPI",
@@ -339,7 +353,6 @@ export const fastifyScalarDocs: FastifyPluginAsync<ScalarDocsOptions> = async (
     }
   });
 
-  // Registra a rota para servir a interface Scalar
   fastify.get(routePrefix, async (request, reply) => {
     const specUrl = `${routePrefix}/openapi.json?ts=${Date.now()}`;
 
@@ -401,7 +414,7 @@ export const fastifyScalarDocs: FastifyPluginAsync<ScalarDocsOptions> = async (
       console.log('🚀 Debug: Iniciando carregamento do Scalar...');
       console.log('📄 Debug: URL do spec:', '${specUrl}');
       
-      // Testa a URL do spec primeiro
+     
       fetch('${specUrl}')
         .then(response => {
           if (!response.ok) {
@@ -425,7 +438,7 @@ export const fastifyScalarDocs: FastifyPluginAsync<ScalarDocsOptions> = async (
           showDebugError('Erro de rede: ' + error.message);
         });
 
-      // Verifica se Scalar carregou
+
       setTimeout(function() {
         const hasScalarContent = document.querySelector('.scalar-app') || 
                                document.querySelector('[data-scalar-api-reference]');
@@ -455,6 +468,26 @@ export const fastifyScalarDocs: FastifyPluginAsync<ScalarDocsOptions> = async (
   });
 };
 
+function convertSchemaToOpenAPI(schema: any, logger: any): any {
+  const isZodSchema = !!schema?._def;
+
+  if (isZodSchema) {
+    try {
+      const convertedSchema = z.toJSONSchema(schema, { target: "openapi-3.0" });
+
+      const { $schema, ...rest } = convertedSchema;
+
+      return rest;
+    } catch (error) {
+      return {
+        type: "object",
+        description: "ERRO: Falha ao converter este schema Zod.",
+      };
+    }
+  }
+
+  return schema;
+}
 function getResponseDescription(statusCode: string): string {
   const descriptions: Record<string, string> = {
     "200": "Success",
@@ -469,8 +502,7 @@ function getResponseDescription(statusCode: string): string {
   };
   return descriptions[statusCode] || "Response";
 }
-
 export default fp(fastifyScalarDocs, {
   fastify: "5.x",
-  name: "fastify-scalar-plugin",
+  name: "fastify-scalar-docs-debug",
 });

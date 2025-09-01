@@ -1,0 +1,31 @@
+{
+  "dependencies": {
+    "fastify": "^5.5.0",
+    "fastify-plugin": "^5.0.1"
+  },
+  "description": "Fastify plugin to generate OpenAPI JSON and Scalar interface automatically",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "keywords": [
+    "fastify",
+    "plugin",
+    "openapi",
+    "swagger",
+    "scalar",
+    "api-docs"
+  ],
+  "license": "MIT",
+  "module": "index.ts",
+  "name": "fastify-scalar-plugin",
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "type": "module",
+  "version": "0.1.0"
+}

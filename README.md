@@ -66,9 +66,6 @@ app.setSerializerCompiler(serializerCompiler);
 
 // --- 2. Registro do Plugin fastify-scalar-plugin ---
 app.register(fastifyScalar, {
-  // 👇 MUDANÇA PRINCIPAL AQUI 👇
-  // Para servir na rota raiz (index), basta definir o prefixo como "/".
-  // A documentação agora será acessível em http://localhost:3000
   routePrefix: "/",
 
   openapi: {

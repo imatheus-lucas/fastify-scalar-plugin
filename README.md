@@ -7,7 +7,6 @@ Um plugin para Fastify que gera automaticamente uma documentação de API intera
 
 Este plugin inspeciona suas rotas, extrai os schemas definidos com Zod e gera uma especificação OpenAPI 3.0 para alimentar a interface do Scalar, tudo isso sem esforço e com configuração mínima.
 
-![alt text](https://raw.githubusercontent.com/scalar/scalar/main/packages/api-reference/public/images/social.png)
 
 ✨ Destaques
 Geração Automática: Cria a documentação da sua API a partir dos seus schemas Zod existentes.
@@ -24,17 +23,17 @@ Configurável: Permite customizar tanto as informações da API (título, versã
 Você precisará ter o fastify e o zod como dependências no seu projeto.
 
 
-´´´bash
-# Usando npm
+```bash
+### Usando npm
 npm install fastify-scalar-plugin fastify-type-provider-zod zod
 
-# Usando yarn
+### Usando yarn
 yarn add fastify-scalar-plugin fastify-type-provider-zod zod
 
-# Usando pnpm
+### Usando pnpm
 pnpm add fastify-scalar-plugin fastify-type-provider-zod zod
 
-# Usando bun
+### Usando bun
 bun add fastify-scalar-plugin fastify-type-provider-zod zod
 ```
 
@@ -212,5 +211,6 @@ start();
 🤝 Contribuição
 Contribuições são bem-vindas! Sinta-se à vontade para abrir uma issue para relatar bugs ou sugerir novas funcionalidades. Pull requests também são muito bem-vindos.
 
-📄 Licença
-Este projeto é licenciado sob a Licença MIT.
+## 📄 Licença
+
+Este projeto é licenciado sob a [Licença MIT](LICENSE).

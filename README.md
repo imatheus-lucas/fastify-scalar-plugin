@@ -65,7 +65,7 @@ app.setSerializerCompiler(serializerCompiler);
 
 
 // --- 2. Registro do Plugin fastify-scalar-plugin ---
-app.register(fastifyScalar, {
+await app.register(fastifyScalar, {
   routePrefix: "/",
 
   openapi: {
